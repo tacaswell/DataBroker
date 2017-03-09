@@ -63,11 +63,11 @@ Suppose we execute several experiments ("plans", in bluesky jargon) like so.
 .. code-block:: python
 
     from bluesky.plans import count, scan, relative_scan
-    from bluesky.examples motor, det  # simulated motor and detector
+    from bluesky.examples import motor, det  # simulated motor and detector
 
     RE(count([det]))  # 1
     RE(scan([det], motor, -1, 1, 5))  # 2
-    RE(relative_scan([det]), motor, 1, 10, 10)  # 3
+    RE(relative_scan([det], motor, 1, 10, 10))  # 3
     RE(scan([det], motor, -1, 1, 1000))  # 4
 
 We can search by ``plan_name``, which is always automatically recorded in the 
@@ -109,20 +109,20 @@ sample and the purpose of each run.
 .. code-block:: python
 
     from bluesky.plans import count, scan, relative_scan
-    from bluesky.examples motor, det  # simulated motor and detector
+    from bluesky.examples import motor, det  # simulated motor and detector
 
     # This adds {'operator': 'Ken'} to all future runs, unless overridden.
     RE.md['operator'] = 'Ken'
 
     RE(count([det]), purpose='calibration', sample='A')
-    RE(scan([det]), motor, 1, 10, 10, operator='Dan')  # temporarily overrides Ken
+    RE(scan([det], motor, 1, 10, 10), operator='Dan')  # temporarily overrides Ken
     RE(count([det]), sample='A')  # (now back to Ken)
     RE(count([det]), sample='B')
 
     RE.md['operator'] = 'Dan'
 
     RE(count([det]), purpose='calibration')
-    RE(scan([det]), motor, 1, 10, 10)
+    RE(scan([det], motor, 1, 10, 10))
 
     del RE.md['operator']  # clean up by un-setting operator
 
@@ -259,7 +259,7 @@ Here are just a few examples:
 =========================================== ============================================================
 syntax                                                          meaning
 =========================================== ============================================================
-``db(sample={'$exists': True})``            headers that include a custom metadata field labeled 'color'
+``db(sample={'$exists': True})``            headers that include a custom metadata field labeled ``sample``
 ``db(plan_name={'$ne': 'relative_scan'})``  headers where the type of scan was not a ``relative_scan``
 =========================================== ============================================================
 

@@ -31,24 +31,39 @@ matrix:
 before_install:
   - git clone https://github.com/nsls-ii/nsls2-ci ~/ci_scripts
   - . ~/ci_scripts/install-miniconda.sh
-  - . ~/ci_scripts/init-filestore.sh
-  - . ~/ci_scripts/init-metadatastore.sh
+  - git clone https://github.com/NSLS-II/metadataservice.git /home/travis/metadataservice
 
 install:
   - export GIT_FULL_HASH=`git rev-parse HEAD`
-  - conda create -n testenv pip pytest python=$TRAVIS_PYTHON_VERSION six numpy pandas h5py coverage jsonschema jinja2 cytoolz pyyaml mongoengine tzlocal boltons pymongo pims tifffile doct channelarchiver filestore metadatastore
+  - conda create -n testenv channelarchiver pytest cytoolz pandas ujson six jsonschema doct mongoquery h5py tornado pymongo pytz numpy tifffile jinja2 coverage pyyaml tzlocal nose python=$TRAVIS_PYTHON_VERSION mongoengine pims prettytable pip -c lightsource2-tag -c conda-forge
   - source activate testenv
+  - conda install --force requests  # hitting some 3.4-only requests bug
+  - pip install mongoquery attrs
   - pip install coveralls codecov
-  - if [ $TRAVIS_PYTHON_VERSION = "2.7" ]; then
+  - |
+    if [ $TRAVIS_PYTHON_VERSION = "2.7" ]; then
       pip install singledispatch;
     fi;
-  - python -c "from filestore import utils, conf; utils.install_sentinels(conf.connection_config, 1)"
-  - python setup.py install
-  # Need to clean the repo or pytest gets confused why there are *two* copies
-  # of all the python files
-  - git clean -xfd
+  - |
+    if [ $TRAVIS_PYTHON_VERSION != "2.7" ]; then
+      pip install https://github.com/NSLS-II/bluesky/zipball/master#egg=bluesky
+    fi;
+  - 'pip install https://github.com/NSLS-II/event-model/zipball/master#egg=event_model'
+  - pip install pytest-cov
+  - pip install coveralls codecov
+  - pip install tzlocal
+  - pip install codecov
+  - pip install -ve .
 
 script:
+  - mkdir -p /home/travis/.config/metadataclient
+  - cp connection.yml /home/travis/.config/metadataclient
+  - source activate testenv
+  # - nohup python /home/travis/metadataservice/startup.py --mongo-host localhost --mongo-port 27017 --service-port 7778 --database mdservicetest --timezone US/Eastern --auth --mongo-user tom --mongo-pwd jerry &
+  # - sleep 5
+  # - export PYTHONPATH=$PYTHONPATH:/home/travis/metadataclient
+  # - cat nohup.out
+
   - coverage run run_tests.py
   - |
     if [ $BUILD_DOCS == true ]; then

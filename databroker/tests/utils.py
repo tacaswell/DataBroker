@@ -1,44 +1,71 @@
-from __future__ import (unicode_literals, absolute_import, division,
-                        print_function)
-import subprocess, threading
+import os
+import shutil
+import tempfile
+import uuid
+
+import tzlocal
+
+from databroker import Broker
+from databroker.broker import HeaderSourceShim, BrokerES
+from databroker.core import EventSourceShim
 
 
-class Command(object):
-    """Thanks SO! http://stackoverflow.com/a/4825933
+def build_sqlite_backed_broker(request):
+    """Uses mongoquery + sqlite -- no pymongo or mongo server anywhere"""
+    from portable_mds.sqlite.mds import MDS
+    from portable_fs.sqlite.fs import FileStore
 
-    Example
-    -------
-    >>> command = Command("echo 'Process started'; sleep 2; echo 'Process finished'")
-    >>> command.run(timeout=3)
-        Thread started
-        Process started
-        Process finished
-        Thread finished
-        0
-    >>> command.run(timeout=1)
-        Thread started
-        Process started
-        Terminating process
-        Thread finished
-        -15
-    """
-    def __init__(self, cmd):
-        self.cmd = cmd
-        self.process = None
+    tempdirname = tempfile.mkdtemp()
+    mds = MDS({'directory': tempdirname,
+                             'timezone': tzlocal.get_localzone().zone}, version=1)
+    filenames = ['run_starts.json', 'run_stops.json', 'event_descriptors.json',
+                 'events.json']
+    for fn in filenames:
+        with open(os.path.join(tempdirname, fn), 'w') as f:
+            f.write('[]')
 
-    def run(self, timeout):
-        def target():
-            print('Thread started')
-            self.process = subprocess.Popen(self.cmd, shell=True)
-            self.process.communicate()
-            print('Thread finished')
+    def delete_mds():
+        shutil.rmtree(tempdirname)
 
-        thread = threading.Thread(target=target)
-        thread.start()
+    request.addfinalizer(delete_mds)
 
-        thread.join(timeout)
-        if thread.is_alive():
-            print('Terminating process')
-            self.process.terminate()
-            thread.join()
-        print(self.process.returncode)
+    tf = tempfile.NamedTemporaryFile()
+    fs = FileStore({'dbpath': tf.name}, version=1)
+
+    def delete_fs():
+        os.remove(tf.name)
+
+    request.addfinalizer(delete_fs)
+
+    return BrokerES(HeaderSourceShim(mds),
+                    EventSourceShim(mds, fs))
+
+
+def build_pymongo_backed_broker(request):
+    '''Provide a function level scoped MDS instance talking to
+    temporary database on localhost:27017 with v1 schema.
+
+    '''
+    from metadatastore.mds import MDS
+    from filestore.utils import create_test_database
+    from filestore.fs import FileStore
+
+    db_name = "mds_testing_disposable_{}".format(str(uuid.uuid4()))
+    md_test_conf = dict(database=db_name, host='localhost',
+                        port=27017, timezone='US/Eastern')
+    mds = MDS(md_test_conf, 1, auth=False)
+
+    db_name = "fs_testing_base_disposable_{uid}"
+    fs_test_conf = create_test_database(host='localhost',
+                                        port=27017, version=1,
+                                        db_template=db_name)
+    fs = FileStore(fs_test_conf, version=1)
+
+    def delete_fs():
+        print("DROPPING DB")
+        fs._connection.drop_database(fs_test_conf['database'])
+        mds._connection.drop_database(md_test_conf['database'])
+
+    request.addfinalizer(delete_fs)
+
+    return Broker(mds, fs)
