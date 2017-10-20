@@ -534,3 +534,77 @@ class MDSTemplate(MDSROTemplate):
                 if not events:
                     continue
                 self.bulk_insert_events(desc_uid, events)
+
+
+def HeaderMutatingTemplate(MDSTemplate):
+    """A Header source that allows updating of the start and stop documents
+    """
+
+    @staticmethod
+    def _validate_update_keys(inp, inp_key, protected_fields):
+        if inp is not None:
+            if any(k in inp for k in protected_fields):
+                bad_keys = [k
+                            for k in protected_fields
+                            if k in inp]
+                raise ValueError(
+                    "The field {!r} may not be update.  "
+                    "You passed {!r} for {}".format(
+                        bad_keys, inp, inp_key))
+
+    def update_start(self, resource_or_uid, update_fields=None,
+                     delete_fields=None):
+
+        if update_fields is None and delete_fields is None:
+            raise ValueError("Must provide one of "
+                             "update_fields or delete_fields")
+
+        # TODO what to do if they are both empty?
+
+        if update_fields is not None:
+            self._validate_update_keys(update_fields, 'update_fields', {'uid'})
+        if delete_fields is not None:
+            self._validate_update_keys(update_fields, 'delete_fields', {'uid'})
+
+        if update_fields is not None and delete_fields is not None:
+            intersection = set(update_fields) & set(delete_fields)
+            if intersection:
+                raise ValueError("update_fields and delete_fields "
+                                 "both contain {!r}".format(intersection))
+
+        update_col = self._runstart_update_col
+        start_col = self._runstart_col
+
+        start_doc = self.run_start_given_uid(resource_or_uid)
+        new_start_doc = dict(start_doc)
+
+        if update_fields:
+            new_start_doc.update(update_fields)
+
+        if delete_fields:
+            for d in delete_fields:
+                del new_start_doc[d]
+
+        return self._api.replace_start(update_col, start_col,
+                                       old=start_doc,
+                                       new=new_start_doc,
+                                       cmd_kwargs=dict(
+                                           update_fields=update_fields,
+                                           delete_fields=delete_fields),
+                                       cmd='update_start')
+
+    def update_stop(self, resource_or_uid, update_fields=None,
+                    delete_fields=None):
+        ...
+
+    def replace_start(self, resource_or_uid, new_doc):
+        ...
+
+    def replace_stop(self, resource_or_uid, new_doc):
+        ...
+
+
+def HeaderDeletingTemplate(HeaderMutatingTemplate):
+    "HeaderSource that allows runs to be deleted"
+    def delete_run(self, resource_or_uid):
+        ...
